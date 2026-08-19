@@ -103,7 +103,7 @@ czasu (nie indeksu) na danych z luką, wykrywanie wstrzykniętej anomalii/
 skoku zarówno na syntetycznych danych, jak i na prawdziwej trajektorii z
 `examples/accelerator/`.
 
-## Czego to NIE jest
+## Czym to NIE jest
 
 Nie jest to model uczenia maszynowego (bias-correction to zwykła średnia
 błędu per grupa, nie trening) ani zwalidowane narzędzie fizyczne/finansowe —
