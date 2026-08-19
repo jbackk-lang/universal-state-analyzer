@@ -6,6 +6,19 @@ Wspólny rdzeń z projektami TIMDR już obecnymi w tym środowisku (pogoda —
 Synoptyk-v2.0, finanse — `deliverable_timdr_finanse/timdr_core_finance.py`),
 tu wydzielony jako osobny, przenośny pakiet.
 
+Parametry TIMDR — definicje i znaczenie
+FLOW — Przepływ / Gradient
+Co mierzy: tempo i kierunek zmian sygnału. Przekłada się na: trend, dynamikę, początek ruchu.
+TWIST — Skręt / Zmiana kierunku
+Co mierzy: nagłe przełamanie dynamiki. Przekłada się na: początek zdarzenia, odwrócenie trendu, punkt krytyczny.
+TRM — Mediana odporna
+Co mierzy: rdzeń sygnału bez szumu. Przekłada się na: filtrację szumu, stabilizację struktury.
+DEFECT — Defekt / Anomalia
+Co mierzy: odchylenie od TRM. Przekłada się na: impuls, skok, dropout, mikro wstrząs.
+RESONANCE — Rezonans / Wzmocnienie
+Co mierzy: lokalne piki energii. Przekłada się na: sprzężenia, wzmocnienia, efekty dynamiczne.
+
+
 Pierwszy dodatkowy przykład użycia: symulacje lattice QCD / masa glueballa
 (`examples/accelerator/`).
 
