@@ -6,36 +6,42 @@ Wspólny rdzeń z projektami TIMDR już obecnymi w tym środowisku (pogoda —
 Synoptyk-v2.0, finanse — `deliverable_timdr_finanse/timdr_core_finance.py`),
 tu wydzielony jako osobny, przenośny pakiet.
 
-Parametry TIMDR — definicje i znaczenie
-FLOW — Przepływ / Gradient
-Co mierzy: tempo i kierunek zmian sygnału. Przekłada się na: trend, dynamikę, początek ruchu.
-TWIST — Skręt / Zmiana kierunku
-Co mierzy: nagłe przełamanie dynamiki. Przekłada się na: początek zdarzenia, odwrócenie trendu, punkt krytyczny.
-TRM — Mediana odporna
-Co mierzy: rdzeń sygnału bez szumu. Przekłada się na: filtrację szumu, stabilizację struktury.
-DEFECT — Defekt / Anomalia
-Co mierzy: odchylenie od TRM. Przekłada się na: impuls, skok, dropout, mikro wstrząs.
-RESONANCE — Rezonans / Wzmocnienie
-Co mierzy: lokalne piki energii. Przekłada się na: sprzężenia, wzmocnienia, efekty dynamiczne.
-
-
 Pierwszy dodatkowy przykład użycia: symulacje lattice QCD / masa glueballa
 (`examples/accelerator/`).
+
+## Parametry TIMDR — definicje i znaczenie
+
+| Parametr | Co mierzy | Przekłada się na | Funkcja w kodzie |
+|---|---|---|---|
+| **TRM** — Mediana odporna | Rdzeń sygnału bez szumu | Filtrację szumu, stabilizację struktury | `TIMDRCore.trm()` |
+| **FLOW** — Przepływ / Gradient | Tempo i kierunek zmian sygnału | Trend, dynamikę, początek ruchu | `TIMDRCore.flow()` |
+| **TWIST** — Skręt / Zmiana kierunku | Nagłe przełamanie dynamiki | Początek zdarzenia, odwrócenie trendu, punkt krytyczny | `TIMDRCore.twist()` |
+| **DEFECT** — Defekt / Anomalia | Odchylenie od TRM | Impuls, skok, dropout, mikro wstrząs | `TIMDRCore.anomalies()` |
+| **RESONANCE** — Rezonans / Wzmocnienie | Lokalne piki energii — kilka parametrów naraz | Sprzężenia, wzmocnienia, efekty dynamiczne | `TIMDRCore.rezonans()` |
+
+**Uwaga o nazewnictwie**: w kodzie jest DODATKOWO osobna funkcja `defekt()`,
+która mierzy coś węższego niż DEFECT z tabeli wyżej — nie odchylenie od
+TRM, tylko nagły SKOK między dwoma bezpośrednio kolejnymi odczytami (próg z
+rozrzutu p90-p10 tego samego okna). To użyteczny, osobny sygnał (łapie np.
+dropout/przeskok czujnika), ale żeby nie było niejasności: `anomalies()` =
+DEFECT z powyższej tabeli, `defekt()` = coś dodatkowego, nie w tej piątce.
 
 ## Co to robi
 
 Cztery sygnały, generyczne dla każdej domeny:
 
-- **anomalia** — pojedynczy odczyt poza statystyczną normą (z-score na
-  medianie/MAD, z podłogą dla serii "prawie stałych", żeby uniknąć
-  dzielenia przez ~0).
-- **defekt** — nagły skok między kolejnymi odczytami tego samego parametru,
-  próg liczony z rozrzutu p90-p10 tego samego okna.
-- **rezonans** — kilka parametrów flaguje anomalię w tej samej chwili —
-  silniejszy, bardziej wiarygodny sygnał niż pojedyncza anomalia.
-- **skręt (twist)** — nagła zmiana kierunku lokalnego trendu (flow),
-  liczona względem CZASU, nie indeksu próbki (żeby luki w danych nie dawały
-  fałszywych alarmów).
+- **anomalia** (`anomalies()`, = DEFECT w tabeli wyżej) — pojedynczy odczyt
+  poza statystyczną normą (z-score na medianie/MAD, z podłogą dla serii
+  "prawie stałych", żeby uniknąć dzielenia przez ~0).
+- **defekt** (`defekt()`, dodatkowy sygnał spoza tabeli wyżej) — nagły skok
+  między kolejnymi odczytami tego samego parametru, próg liczony z rozrzutu
+  p90-p10 tego samego okna.
+- **rezonans** (`rezonans()`, = RESONANCE) — kilka parametrów flaguje
+  anomalię w tej samej chwili — silniejszy, bardziej wiarygodny sygnał niż
+  pojedyncza anomalia.
+- **skręt** (`twist()`, = TWIST) — nagła zmiana kierunku lokalnego trendu
+  (flow), liczona względem CZASU, nie indeksu próbki (żeby luki w danych
+  nie dawały fałszywych alarmów).
 
 Do tego: `rhythm()` (wykrywanie okresowości przez autokorelację, po
 odjęciu trendu liniowego), `detect_jump()` + persystencja stanu na dysku
@@ -116,7 +122,7 @@ czasu (nie indeksu) na danych z luką, wykrywanie wstrzykniętej anomalii/
 skoku zarówno na syntetycznych danych, jak i na prawdziwej trajektorii z
 `examples/accelerator/`.
 
-## Czym to NIE jest
+## Czego to NIE jest
 
 Nie jest to model uczenia maszynowego (bias-correction to zwykła średnia
 błędu per grupa, nie trening) ani zwalidowane narzędzie fizyczne/finansowe —
