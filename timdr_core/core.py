@@ -10,8 +10,9 @@ S(t) - dowolny szereg czasowy z liczbami.
 
 Metody statyczne/instancyjne operują na gołych tablicach (t, s) — Twój
 kod dostarcza własne funkcje ekstrakcji komponentów z surowych danych
-(patrz examples/accelerator/adapters.py po przykład dla lattice QCD, albo
-timdr_core_finance.py po przykład dla świec OHLCV: delta_proxy/spread_proxy).
+(patrz examples/accelerator/analyze_trajectory.py po przykład dla
+lattice QCD, albo timdr_core_finance.py w innym repo po przykład dla
+świec OHLCV: delta_proxy/spread_proxy).
 
 Zaimplementowane pułapki, na które warto uważać przy każdej nowej domenie
 (patrz też skill timdr-signal-framework):
@@ -21,6 +22,16 @@ Zaimplementowane pułapki, na które warto uważać przy każdej nowej domenie
   inaczej luki w danych dają fałszywe alarmy.
 - rhythm() na wartości ZE ZNAKIEM, po odjęciu trendu liniowego - rektyfikacja
   (|x|) tworzy sztuczną okresowość z samego wyprostowania sygnału.
+
+ZNANA, CZĘŚCIOWO ADRESOWANA pułapka - "ślepy punkt self-baseline": bez
+`baseline=`/`baseline_spread=` (patrz anomalies()/defekt() niżej),
+median/MAD/rozrzut liczą się z TEGO SAMEGO okna, które jest oceniane. Sygnał
+nietypowy PRZEZ CAŁE obserwowane okno (nie ma w danych wcześniejszego,
+"normalnego" fragmentu) wychodzi wtedy jako statystycznie normalny - bo nie
+ma z czym go porównać. To ten sam błąd, co znaleziony i naprawiony w
+TIMDR-Crypto-Graph ("ślepy punkt self-eq"). Obejście: `timdr_core/baseline.py`
+(`baseline_from_calibration()`, `cohort_baseline()`) + parametr `baseline=`
+tutaj - patrz README, sekcja "Ograniczenia", i test_baseline.py.
 """
 from __future__ import annotations
 
@@ -90,33 +101,60 @@ class TIMDRCore:
 
     # ------------------------------------------------------------------
     # ANOMALIA — MAD-owy z-score z podłogą (unika pułapki zero-inflation)
+    #
+    # baseline=None (domyślnie): median/MAD liczone z TEGO SAMEGO okna `s`,
+    # które jest oceniane ("self"). To ma znany, przetestowany ślepy punkt
+    # (patrz test_baseline.py i README, sekcja "Ograniczenia"): sygnał,
+    # który jest nietypowy PRZEZ CAŁE obserwowane okno, wychodzi jako
+    # "normalny" względem własnej mediany, bo nie ma z czym go porównać.
+    #
+    # baseline=(median, mad): jawnie podane odniesienie, policzone GDZIE
+    # INDZIEJ niż `s` (np. z osobnego okresu kalibracji przez
+    # baseline_from_calibration(), albo z kohorty przez cohort_baseline()
+    # w timdr_core/baseline.py) - to jest sposób na obejście powyższego
+    # ślepego punktu, patrz README.
     # ------------------------------------------------------------------
-    def anomalies(self, t, s, factor: float = 3.0, floor_frac: float = 0.05):
+    def anomalies(self, t, s, factor: float = 3.0, floor_frac: float = 0.05, baseline=None):
         s = np.asarray(s, float)
         n = len(s)
         if n == 0:
             return np.array([], dtype=int), np.array([]), 0.0
-        med = np.median(s)
-        mad = np.median(np.abs(s - med)) * self.mad_scale
-        if mad == 0 or not np.isfinite(mad):
-            std = np.std(s)
-            mad = std if std > 0 else max(abs(med) * floor_frac, 1e-9)
+        if baseline is not None:
+            med, mad = baseline
+            if mad == 0 or not np.isfinite(mad):
+                mad = max(abs(med) * floor_frac, 1e-9)
+        else:
+            med = np.median(s)
+            mad = np.median(np.abs(s - med)) * self.mad_scale
+            if mad == 0 or not np.isfinite(mad):
+                std = np.std(s)
+                mad = std if std > 0 else max(abs(med) * floor_frac, 1e-9)
         z = (s - med) / mad
         idx = np.where(np.abs(z) > factor)[0]
         return idx, z, mad * factor
 
     # ------------------------------------------------------------------
     # DEFEKT — nagły skok między kolejnymi odczytami, próg z p90-p10 + podłoga
+    #
+    # baseline_spread=None (domyślnie): rozrzut p90-p10 liczony z TEGO
+    # SAMEGO `s` co oceniany - łapie PRZEJŚCIE w nowy stan (skok), ale
+    # nie odróżni "typowo skoczny dla tej populacji" od "nietypowo
+    # skoczny", bo obie mediana i rozrzut normalizują się do własnych
+    # danych. baseline_spread=liczba: jawnie podany rozrzut z osobnego
+    # źródła (kalibracja/kohorta), ten sam pattern co w anomalies().
     # ------------------------------------------------------------------
     @staticmethod
-    def defekt(s, factor: float = 0.3, floor_frac: float = 0.05):
+    def defekt(s, factor: float = 0.3, floor_frac: float = 0.05, baseline_spread=None):
         s = np.asarray(s, float)
         n = len(s)
         if n < 2:
             return np.array([], dtype=int), np.array([])
         diffs = np.diff(s)
-        p10, p90 = np.percentile(s, 10), np.percentile(s, 90)
-        spread = p90 - p10
+        if baseline_spread is not None:
+            spread = baseline_spread
+        else:
+            p10, p90 = np.percentile(s, 10), np.percentile(s, 90)
+            spread = p90 - p10
         if spread <= 0 or not np.isfinite(spread):
             spread = max(abs(np.median(s)) * floor_frac, 1e-9)
         thr = factor * spread
@@ -181,13 +219,21 @@ class TIMDRCore:
         rezonans_min: int = 3,
         twist_threshold: float = 0.4,
         floor_frac: float = 0.05,
+        baselines: dict[str, tuple[float, float]] | None = None,
     ) -> dict:
         """params: {nazwa: tablica wartości (ta sama długość co t)}.
         Zwraca anomalie/defekty per parametr, wspólny rezonans, i
         twist/flow policzone dla KAŻDEGO parametru osobno (nie jednego
         wybranego - w przeciwieństwie do finansowej wersji, gdzie flow/twist
         liczy się tylko na sigma; tu, bez wiedzy domenowej, robimy to dla
-        wszystkich, a wywołujący ignoruje to, czego nie potrzebuje)."""
+        wszystkich, a wywołujący ignoruje to, czego nie potrzebuje).
+
+        baselines: opcjonalnie {nazwa: (median, mad)} z timdr_core.baseline
+        (baseline_from_calibration() albo cohort_baseline()) - gdy podane
+        dla danego parametru, anomalies() dla niego liczy z tego
+        odniesienia zamiast z własnego okna `params[nazwa]`. Bez tego
+        (domyślnie None) zachowanie jest jak dotąd - self-baseline, ze
+        znanym ślepym punktem opisanym w README/test_baseline.py."""
         t = np.asarray(t, float)
         n = len(t)
         anomaly_idx_per_param: dict[str, np.ndarray] = {}
@@ -196,7 +242,8 @@ class TIMDRCore:
 
         for name, vals in params.items():
             vals = np.asarray(vals, float)
-            an_idx, _, _ = self.anomalies(t, vals, factor=anomaly_factor, floor_frac=floor_frac)
+            baseline = baselines.get(name) if baselines else None
+            an_idx, _, _ = self.anomalies(t, vals, factor=anomaly_factor, floor_frac=floor_frac, baseline=baseline)
             anomaly_idx_per_param[name] = an_idx
 
             de_idx, _ = self.defekt(vals, factor=defekt_factor, floor_frac=floor_frac)

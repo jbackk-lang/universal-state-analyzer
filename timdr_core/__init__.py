@@ -2,11 +2,11 @@
 (anomalia/defekt/rezonans/skręt/rhythm) + korekta obciążenia + wykrywanie
 skoku między uruchomieniami ("EV").
 
-Wspólny rdzeń z timdr_core_finance.py (deliverable_timdr_finanse/) -
-ta sama matematyka (TRM/FLOW/TWIST/ANOMALIE/DEFEKT/RHYTHM/REZONANS),
+Wspólny rdzeń z timdr_core_finance.py (deliverable_timdr_finanse/, inne
+repo) - ta sama matematyka (TRM/FLOW/TWIST/ANOMALIE/DEFEKT/RHYTHM/REZONANS),
 oczyszczona z założeń o konkretnej domenie (żadnych "price"/"volume").
 Podłącz własne funkcje ekstrakcji komponentów z surowych danych (patrz
-examples/accelerator/adapters.py) i korzystaj z tego samego silnika.
+examples/accelerator/analyze_trajectory.py) i korzystaj z tego samego silnika.
 
 Nic tu nie jest zwalidowaną fizyką/finansami/czymkolwiek - to narzędzie do
 wykrywania NIETYPOWYCH ODCZYTÓW W SZEREGU CZASOWYM, nie predykcyjny model.
@@ -15,6 +15,7 @@ wykrywania NIETYPOWYCH ODCZYTÓW W SZEREGU CZASOWYM, nie predykcyjny model.
 from .core import TIMDRCore
 from .volatility import detect_jump, load_last_state, save_last_state, clear_state
 from .bias_correction import compute_lead_bias, apply_bias_correction, badge
+from .baseline import baseline_from_calibration, cohort_baseline
 
 __all__ = [
     "TIMDRCore",
@@ -25,4 +26,6 @@ __all__ = [
     "compute_lead_bias",
     "apply_bias_correction",
     "badge",
+    "baseline_from_calibration",
+    "cohort_baseline",
 ]
