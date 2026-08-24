@@ -28,6 +28,55 @@ projektach tej rodziny (TIMDR-Quantum-Lattice, TIMDR-Earthquake-Core,
 TIMDR-Crypto-Graph) dodawanie rezonansu/kompozytowego wskaźnika do wyniku
 predykcyjnego za każdym razem pogarszało wynik.
 
+**UWAGA na nazewnictwo:** `REZONANS`/`rezonans()` powyżej to licznik
+koincydencji — nazwa pożyczona z fizyki, ale mechanizm inny (zgodność
+WIELU kanałów W TEJ SAMEJ CHWILI, nie zjawisko oscylacyjne). Fizyczny
+rezonans — układ wracający do stanu równowagi z otoczeniem przez
+oscylacyjne "dzwonienie" na charakterystycznej częstotliwości — jest
+osobno w `timdr_core/ringdown.py::ringdown_resonance()`, patrz niżej.
+
+### RINGDOWN — czy powrót do równowagi PO zdarzeniu jest oscylacyjny
+
+`ringdown_resonance(t, s, event_idx, ...)` (i wygodne opakowanie
+`TIMDRCore.analyze_ringdown(t, s, event_indices, ...)`) analizuje, co się
+dzieje z kanałem PO zdarzeniu (anomalii/defekcie/twiście, znalezionym np.
+przez `analyze_multi()`): czy powrót do poziomu sprzed zaburzenia jest
+OSCYLACYJNY (sygnał przewahnął przez ten poziom w obie strony — prawdziwy
+rezonans/synchronizacja z otoczeniem w sensie fizycznym) czy MONOTONICZNY
+(przetłumiony powrót — brak rezonansu do zaobserwowania). Nie każdy powrót
+do równowagi jest rezonansem; to rozróżnienie jest sensem tej funkcji.
+
+Metoda: przejścia przez poziom odniesienia (zero-crossing, z interpolacją
+czasu przejścia) + logarithmic decrement między szczytami tego samego
+znaku — standardowa, podręcznikowa technika inżynierska szacowania
+częstotliwości/tłumienia z realnych danych (nie dopasowanie nieliniowe —
+za kruche numerycznie na krótkich, zaszumionych oknach).
+
+**Zweryfikowane liczbowo, nie tylko "wygląda sensownie"** (`tests/test_ringdown.py`,
+13 testów): tłumiony oscylator o ZNANEJ częstotliwości f0=1.5Hz i stałej
+czasowej τ=1.2s → odzyskana częstotliwość 1,500Hz (błąd <0.1%), odzyskany
+współczynnik tłumienia 0,083 vs teoretyczny 0,088 (wzór
+ζ=1/√((2π·f0·τ)²+1)); stabilne na 5 różnych realizacjach szumu. Czysty
+zanik wykładniczy (bez oscylacji) poprawnie rozpoznany jako
+`is_oscillatory=False`.
+
+**Znaleziony i naprawiony błąd przy budowie:** pierwsza wersja (bez progu
+szumu) na zaszumionym, nieoscylacyjnym zaniku dawała fałszywie
+`is_oscillatory=True` — szum w ogonie sygnału (gdzie prawdziwa amplituda
+już wygasła) generował dziesiątki przypadkowych przejść przez poziom
+odniesienia, branych za oscylację. Naprawa: `noise_floor_factor` (domyślnie
+3.0 × odchylenie standardowe z okresu PRZED zdarzeniem) — szczyty poniżej
+progu i wszystko po pierwszym takim szczycie są odrzucane z analizy, zanim
+zdążą wygenerować fałszywe przejścia. Regresja zapisana w
+`test_bug_niefiltrowany_szum_dawal_falszywy_rezonans` (odtwarza błąd z
+`noise_floor_factor=0`, żeby test faktycznie sprawdzał naprawę).
+
+**Ograniczenie:** `noise_floor_factor=3.0` to wartość ustalona ręcznie,
+zweryfikowana wyłącznie na syntetykach z tego repo — nie skalibrowana na
+żadnych realnych danych. Bez historii przed zdarzeniem (`event_idx=0`)
+nie da się oszacować szumu — `noise_floor=0` (brak filtrowania) w takim
+przypadku, udokumentowane, nie ciche zgadywanie.
+
 Dodatkowe moduły:
 - `timdr_core/volatility.py` — `detect_jump()` + trwały stan między
   uruchomieniami na dysku (nie w pamięci procesu — restart procesu inaczej
@@ -45,12 +94,15 @@ Przykład domeny spoza pogody/finansów: `examples/accelerator/` — analiza
 trajektorii z (jawnie uproszczonej, patrz zastrzeżenie niżej) symulacji
 lattice QCD / masy glueballa, tym samym silnikiem.
 
-**Testy: 46, wszystkie przechodzą** (`pytest tests/ -q`) — brzegowe
+**Testy: 59, wszystkie przechodzą** (`pytest tests/ -q`) — brzegowe
 przypadki n=0/1/2, podłoga na zero-inflation (MAD=0/rozrzut=0), gradient
 liczony względem czasu (nie indeksu) na danych z luką, wykrywanie
 wstrzykniętej anomalii/skoku na syntetykach i na nie-mockowanej ścieżce
 integracyjnej z przykładu akceleratora (`test_accelerator_integration.py`),
-oraz `test_baseline.py` (8 testów) opisany w sekcji "Ograniczenia".
+`test_baseline.py` (8 testów) opisany w sekcji "Ograniczenia", oraz
+`test_ringdown.py` (13 testów) — walidacja `ringdown_resonance()` na
+tłumionym oscylatorze o ZNANEJ częstotliwości/tłumieniu, patrz sekcja
+RINGDOWN wyżej.
 
 ### Użycie
 
@@ -66,6 +118,11 @@ result = core.analyze_multi(t, params, rezonans_min=3)
 result["anomaly_idx"]["kanal_a"]   # indeksy t z anomalią w kanale a
 result["defekt_idx"]["kanal_a"]    # indeksy nagłych skoków
 result["rezonans_idx"]              # indeksy, gdzie >=3 kanały naraz flagują anomalię
+
+# Rezonans w sensie fizycznym (oscylacyjny powrót do równowagi) - osobno:
+ring = core.analyze_ringdown(t, params["kanal_a"], result["defekt_idx"]["kanal_a"])
+ring[0]["is_oscillatory"]           # czy powrót po pierwszym wykrytym skoku "dzwoni"
+ring[0]["frequency_hz"]             # jeśli tak - na jakiej częstotliwości
 ```
 
 Z odniesieniem do osobnego okresu kalibracji zamiast tego samego okna
@@ -90,7 +147,8 @@ cd examples/accelerator && python analyze_trajectory.py --T 40 --N 12 --inject-a
 
 ```
 timdr_core/
-  core.py             — TIMDRCore: trm/flow/twist/anomalies/defekt/rhythm/rezonans/analyze_multi
+  core.py             — TIMDRCore: trm/flow/twist/anomalies/defekt/rhythm/rezonans/analyze_multi/analyze_ringdown
+  ringdown.py          — ringdown_resonance(): rezonans w sensie fizycznym (oscylacyjny powrót do równowagi)
   baseline.py          — baseline_from_calibration/cohort_baseline
   volatility.py        — detect_jump + load/save/clear_state (dysk, nie pamięć procesu)
   bias_correction.py   — compute_lead_bias/apply_bias_correction/badge
@@ -99,7 +157,7 @@ examples/accelerator/
   lattice_demo.py       — mini demo lattice QCD: Wilson loops, U(1) 4D, Metropolis, SU(3) mock (oryginalny skrypt)
   analyze_trajectory.py — podłącza timdr_core do trajektorii z powyższych dwóch skryptów
 tests/
-  test_core.py, test_baseline.py, test_volatility.py, test_bias_correction.py, test_accelerator_integration.py
+  test_core.py, test_baseline.py, test_volatility.py, test_bias_correction.py, test_accelerator_integration.py, test_ringdown.py
 ```
 
 ## Ograniczenia
@@ -168,6 +226,14 @@ walidację na realnych danych, ale ten pakiet, w obecnej formie, jej nie ma.
 **`examples/accelerator/analyze_trajectory.py` nie korzysta jeszcze z
 `baseline=`/`baselines=`** — używa wyłącznie domyślnego trybu self, mimo
 że mechanizm kalibracji jest już dostępny w `analyze_multi()`.
+
+**`ringdown_resonance()` zwalidowany wyłącznie na syntetycznym, czystym
+modelu tłumionego oscylatora.** `noise_floor_factor=3.0` (próg odcięcia
+szumu) jest ustalony ręcznie, nie skalibrowany na realnych danych. Metoda
+zero-crossing/log-decrement zakłada dobrze odseparowane, wyraźne szczyty —
+na sygnale z kilkoma nakładającymi się częstotliwościami naraz
+(polirytmia) da prawdopodobnie mylącą, uśrednioną częstotliwość zamiast
+błędu — to nie zostało przetestowane.
 
 **Nie jest to model uczenia maszynowego** (`bias_correction` to zwykła
 średnia błędu per grupa, nie trening) ani zwalidowane narzędzie
