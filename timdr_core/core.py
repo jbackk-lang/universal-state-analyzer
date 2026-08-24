@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .ringdown import ringdown_resonance
+
 
 class TIMDRCore:
     """Rdzeń bez żadnej wiedzy domenowej - patrz docstring modułu."""
@@ -265,3 +267,30 @@ class TIMDRCore:
             rezonans_idx=rez_idx,
             rezonans_counts=rez_counts,
         )
+
+    # ------------------------------------------------------------------
+    # RINGDOWN — czy powrót do równowagi PO zdarzeniu jest oscylacyjny
+    # (rezonans w sensie fizycznym), czy monotoniczny (brak rezonansu).
+    # Patrz ringdown.py - świadomie ODDZIELNE od rezonans()/rezonans_idx
+    # powyżej (który jest licznikiem koincydencji między kanałami, nie
+    # analizą oscylacyjnego powrotu jednego kanału do bazowego poziomu).
+    # ------------------------------------------------------------------
+    @staticmethod
+    def analyze_ringdown(
+        t,
+        s,
+        event_indices,
+        pre_event_window: int = 10,
+        max_lookahead: int | None = None,
+    ) -> list[dict]:
+        """Wywołuje ringdown_resonance() dla każdego indeksu w `event_indices`
+        (np. `anomaly_idx["kanal_a"]` albo `defekt_idx["kanal_a"]` z wyniku
+        analyze_multi()) i zwraca listę wyników w tej samej kolejności."""
+        return [
+            ringdown_resonance(
+                t, s, int(idx),
+                pre_event_window=pre_event_window,
+                max_lookahead=max_lookahead,
+            )
+            for idx in event_indices
+        ]

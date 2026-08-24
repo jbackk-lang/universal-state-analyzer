@@ -16,6 +16,7 @@ from .core import TIMDRCore
 from .volatility import detect_jump, load_last_state, save_last_state, clear_state
 from .bias_correction import compute_lead_bias, apply_bias_correction, badge
 from .baseline import baseline_from_calibration, cohort_baseline
+from .ringdown import ringdown_resonance
 
 __all__ = [
     "TIMDRCore",
@@ -28,4 +29,5 @@ __all__ = [
     "badge",
     "baseline_from_calibration",
     "cohort_baseline",
+    "ringdown_resonance",
 ]
