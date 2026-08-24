@@ -46,30 +46,54 @@ rezonans/synchronizacja z otoczeniem w sensie fizycznym) czy MONOTONICZNY
 (przetłumiony powrót — brak rezonansu do zaobserwowania). Nie każdy powrót
 do równowagi jest rezonansem; to rozróżnienie jest sensem tej funkcji.
 
-Metoda: przejścia przez poziom odniesienia (zero-crossing, z interpolacją
-czasu przejścia) + logarithmic decrement między szczytami tego samego
-znaku — standardowa, podręcznikowa technika inżynierska szacowania
+Metoda: histereza Schmitta NA WYKRYWANIU STANU (stan HIGH/LOW potwierdzany
+dopiero gdy |sygnał - baseline| > `noise_floor_factor × std(szum przed
+zdarzeniem)`, przejście liczone dopiero przy faktycznym przełączeniu na
+przeciwny, potwierdzony stan) + interpolowane przejścia przez poziom
+odniesienia + logarithmic decrement między szczytami tego samego znaku —
+standardowa, podręcznikowa technika inżynierska szacowania
 częstotliwości/tłumienia z realnych danych (nie dopasowanie nieliniowe —
 za kruche numerycznie na krótkich, zaszumionych oknach).
 
 **Zweryfikowane liczbowo, nie tylko "wygląda sensownie"** (`tests/test_ringdown.py`,
 13 testów): tłumiony oscylator o ZNANEJ częstotliwości f0=1.5Hz i stałej
-czasowej τ=1.2s → odzyskana częstotliwość 1,500Hz (błąd <0.1%), odzyskany
-współczynnik tłumienia 0,083 vs teoretyczny 0,088 (wzór
-ζ=1/√((2π·f0·τ)²+1)); stabilne na 5 różnych realizacjach szumu. Czysty
-zanik wykładniczy (bez oscylacji) poprawnie rozpoznany jako
-`is_oscillatory=False`.
+czasowej τ=1.2s → odzyskana częstotliwość 1,498Hz (błąd 0,15%), odzyskany
+współczynnik tłumienia 0,075 vs teoretyczny 0,088 (wzór
+ζ=1/√((2π·f0·τ)²+1), błąd w granicach tolerancji testu rel=0.3); stabilne
+na 5 różnych realizacjach szumu. Czysty zanik wykładniczy (bez oscylacji)
+poprawnie rozpoznany jako `is_oscillatory=False`.
 
-**Znaleziony i naprawiony błąd przy budowie:** pierwsza wersja (bez progu
-szumu) na zaszumionym, nieoscylacyjnym zaniku dawała fałszywie
-`is_oscillatory=True` — szum w ogonie sygnału (gdzie prawdziwa amplituda
-już wygasła) generował dziesiątki przypadkowych przejść przez poziom
-odniesienia, branych za oscylację. Naprawa: `noise_floor_factor` (domyślnie
-3.0 × odchylenie standardowe z okresu PRZED zdarzeniem) — szczyty poniżej
-progu i wszystko po pierwszym takim szczycie są odrzucane z analizy, zanim
-zdążą wygenerować fałszywe przejścia. Regresja zapisana w
-`test_bug_niefiltrowany_szum_dawal_falszywy_rezonans` (odtwarza błąd z
-`noise_floor_factor=0`, żeby test faktycznie sprawdzał naprawę).
+**Trzy błędy znalezione i naprawione przy budowie** (w kolejności, w jakiej
+wypłynęły — każdy następny ujawnił się dopiero po naprawie poprzedniego):
+
+1. *Szum w ogonie brany za oscylację.* Pierwsza wersja (bez progu szumu) na
+   zaszumionym, nieoscylacyjnym zaniku dawała fałszywie
+   `is_oscillatory=True` — szum w ogonie sygnału (gdzie prawdziwa amplituda
+   już wygasła) generował dziesiątki przypadkowych przejść przez poziom
+   odniesienia. Naprawa: próg szumu `noise_floor_factor × std(...)`.
+
+2. *Drganie ("chatter") tuż przy prawdziwym przejściu, przy wysokiej
+   częstotliwości próbkowania.* Wykryte przy portowaniu do TIMDR-Grid-Monitor
+   (sieć energetyczna, ~1000 próbek/s): PRAWDZIWE przejście przez zero też
+   generowało kilkanaście-kilkaset "przejść" z rzędu, bo próbka szumu tuż
+   przy samym przejściu potrafi kilkukrotnie zmienić znak, zanim sygnał
+   wyraźnie odjedzie na nową stronę. Pierwsza próba naprawy (doklejona po
+   fakcie do już policzonych szczytów, osobnym, luźniejszym progiem)
+   wprowadziła REGRESJĘ na błędzie #1 (obciążenie doboru zawyżało
+   "przetrwałe" szczyty). Ostateczna naprawa: histereza Schmitta zastosowana
+   wprost NA WYKRYWANIU STANU, jednym wspólnym progiem (`noise_floor`) dla
+   obu ról — usuwa oba błędy tym samym mechanizmem.
+3. *Zdegenerowany, podwójnie liczony pierwszy/ostatni szczyt* — gdy sygnał
+   przekracza próg już w pierwszej/ostatniej próbce okna, granica okna i
+   punkt potwierdzenia stanu pokrywały się, dając dwa niemal identyczne
+   "szczyty" w tym samym miejscu (widoczne jako zawyżona o ~20% odzyskana
+   częstotliwość na teście specyficznym dla sieci energetycznej — patrz
+   TIMDR-Grid-Monitor). Naprawa: deduplikacja granic segmentów.
+
+Dodatkowo: częstotliwość liczona jest z **mediany**, nie średniej, odstępów
+między przejściami — ostatni potwierdzony półokres bywa tuż nad progiem
+szumu (niepewny dokładny czas), a mediana jest odporna na taki pojedynczy
+zanieczyszczony półokres bez osobnego progu odcięcia.
 
 **Ograniczenie:** `noise_floor_factor=3.0` to wartość ustalona ręcznie,
 zweryfikowana wyłącznie na syntetykach z tego repo — nie skalibrowana na

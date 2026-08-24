@@ -72,6 +72,29 @@ def ringdown_resonance(
         są ODRZUCANE z analizy oscylacyjności/częstotliwości/tłumienia,
         zanim zdążą wygenerować fałszywe przejścia przez zero.
 
+    DRUGI, ODDZIELNY błąd znaleziony przy portowaniu tej funkcji do sygnału
+    o wysokiej częstotliwości próbkowania względem poziomu szumu (sieć
+    energetyczna, ~1000 próbek/s): PRAWDZIWE przejście przez zero też
+    generowało kilka-kilkanaście "przejść" z rzędu, bo próbka szumu tuż
+    PRZY samym przejściu (gdzie sygnał i tak jest bliski zeru) potrafi
+    kilkukrotnie zmienić znak, zanim sygnał wyraźnie odejdzie na nową
+    stronę ("drganie"/chatter, dokładnie ten sam problem co w realnych
+    komparatorach analogowych). Naprawa: histereza metodą Schmitta
+    zastosowana NA WYKRYWANIU STANU (nie doklejona po fakcie do już
+    policzonych szczytów) — stan HIGH/LOW jest "potwierdzany" dopiero gdy
+    |sygnał - baseline| > noise_floor, a przejście liczy się dopiero przy
+    faktycznym przełączeniu na przeciwny, potwierdzony stan. Próbki w
+    paśmie ±noise_floor (chatter przy prawdziwym przejściu ORAZ szum w
+    zanikłym ogonie sygnału - oba błędy tym samym mechanizmem) nigdy nie
+    potwierdzają nowego stanu, więc żaden z nich nie generuje fałszywego
+    przejścia. (Pierwsza próba naprawy robiła to po fakcie, osobnym,
+    luźniejszym progiem histerezy — to dawało obciążenie doboru:
+    "przetrwałe" szczyty były systematycznie zawyżone, część z nich
+    przypadkiem przekraczała potem próg odcięcia ogona i dawała fałszywe
+    is_oscillatory=True na czysto monotonicznym zaniku; naprawione przez
+    przejście na jeden, wspólny próg na poziomie stanu, patrz historia
+    tego pliku.)
+
     Zwraca dict:
       baseline, noise_floor, is_oscillatory (bool),
       n_crossings, n_peaks_used (ile przejść/szczytów POWYŻEJ progu szumu
@@ -123,41 +146,70 @@ def ringdown_resonance(
     if len(d) < 3:
         return result
 
-    # --- przejścia przez baseline (interpolowany czas przejścia) ---
-    crossing_times = []
-    for i in range(len(d) - 1):
-        if d[i] == 0:
-            crossing_times.append(float(t_post[i]))
-        elif (d[i] > 0) != (d[i + 1] > 0):
-            frac = -d[i] / (d[i + 1] - d[i])
-            crossing_times.append(float(t_post[i] + frac * (t_post[i + 1] - t_post[i])))
-
-    # --- szczyty: lokalne ekstremum |d| w każdym segmencie między przejściami
-    # (włącznie z segmentem przed pierwszym i po ostatnim przejściu) ---
-    bounds = [float(t_post[0])] + crossing_times + [float(t_post[-1])]
-    all_peak_times: list[float] = []
-    all_peak_amps: list[float] = []
-    for a, b in zip(bounds[:-1], bounds[1:]):
-        mask = (t_post >= a) & (t_post <= b)
-        if not np.any(mask):
+    # --- histereza Schmitta NA STANIE, nie doklejona po fakcie do już
+    # policzonych szczytów: stan HIGH/LOW jest "potwierdzany" dopiero gdy
+    # |d| > noise_floor; przejście zapisujemy dopiero gdy stan faktycznie
+    # PRZEŁĄCZY się na przeciwny, potwierdzony stan. Próbki w paśmie
+    # [-noise_floor, noise_floor] nigdy nie potwierdzają nowego stanu, więc
+    # nie generują fałszywych przejść — to standardowy komparator z
+    # histerezą (Schmitt trigger) zastosowany wprost do detekcji stanu.
+    # (Wcześniejsza wersja robiła to po fakcie, osobnym progiem histerezy
+    # luźniejszym niż noise_floor — to wprowadzało obciążenie doboru:
+    # "przetrwałe" szczyty były systematycznie zawyżone i część z nich
+    # przypadkiem przekraczała potem próg odcięcia ogona, dając fałszywe
+    # is_oscillatory=True. Jeden próg dla obu ról usuwa tę asymetrię.)
+    band = noise_floor
+    confirmed_idx: list[int] = []
+    state = 0
+    for i in range(len(d)):
+        if d[i] > band:
+            new_state = 1
+        elif d[i] < -band:
+            new_state = -1
+        else:
             continue
-        local_idx = np.argmax(np.abs(d[mask]))
-        global_idx = np.where(mask)[0][local_idx]
-        all_peak_times.append(float(t_post[global_idx]))
-        all_peak_amps.append(float(d[global_idx]))
+        if new_state != state:
+            confirmed_idx.append(i)
+            state = new_state
 
-    # --- odetnij wszystko OD PIERWSZEGO szczytu poniżej progu szumu -
-    # dalej to już tylko szum wokół baseline, nie prawdziwy sygnał
-    # powrotu (patrz noise_floor_factor wyżej po pełne uzasadnienie).
-    k_trusted = len(all_peak_amps)
-    for i, amp in enumerate(all_peak_amps):
-        if abs(amp) < noise_floor:
-            k_trusted = i
-            break
+    # przejścia = surowy moment zmiany znaku d (interpolowany), leżący
+    # MIĘDZY dwoma kolejnymi potwierdzonymi punktami przeciwnego stanu — to
+    # on odpowiada faktycznej chwili, w której sygnał zaczął zmieniać
+    # stronę (potwierdzenie histerezą przychodzi chwilę później, gdy sygnał
+    # wyraźnie odjedzie od zera).
+    crossing_times: list[float] = []
+    for prev_i, cur_i in zip(confirmed_idx[:-1], confirmed_idx[1:]):
+        found = None
+        for k in range(prev_i, cur_i):
+            if d[k] == 0 or (d[k] > 0) != (d[k + 1] > 0):
+                frac = 0.0 if d[k] == 0 else -d[k] / (d[k + 1] - d[k])
+                found = float(t_post[k] + frac * (t_post[k + 1] - t_post[k]))
+                break
+        if found is None:
+            found = float((t_post[prev_i] + t_post[cur_i]) / 2.0)
+        crossing_times.append(found)
 
-    peak_amps = all_peak_amps[:k_trusted]
-    peak_times = all_peak_times[:k_trusted]
-    used_crossings = crossing_times[:max(0, k_trusted - 1)]
+    # szczyty: lokalne ekstremum |d| w segmentach ograniczonych
+    # potwierdzonymi punktami stanu (nie surowymi przejściami) — każdy
+    # segment z definicji zawiera punkt przekraczający próg szumu, więc
+    # każdy zwrócony szczyt jest już "zaufany" (>= noise_floor); osobne
+    # obcinanie ogona po fakcie nie jest już potrzebne.
+    # (deduplikacja: gdy sygnał PRZEKRACZA próg już w pierwszej/ostatniej
+    # próbce okna, confirmed_idx[0]/[-1] pokrywa się z granicą 0/len(d)-1 -
+    # bez `set()` dawałoby to zdegenerowany, jednopunktowy segment i
+    # podwójnie liczony ten sam fizyczny szczyt, patrz historia tego pliku)
+    bounds_idx = sorted(set([0] + confirmed_idx + [len(d) - 1]))
+    peak_times: list[float] = []
+    peak_amps: list[float] = []
+    for a, b in zip(bounds_idx[:-1], bounds_idx[1:]):
+        if b < a:
+            continue
+        seg = d[a:b + 1]
+        local_idx = int(np.argmax(np.abs(seg)))
+        peak_times.append(float(t_post[a + local_idx]))
+        peak_amps.append(float(seg[local_idx]))
+
+    used_crossings = crossing_times
 
     result["n_crossings"] = len(used_crossings)
     result["n_peaks_used"] = len(peak_amps)
@@ -172,9 +224,18 @@ def ringdown_resonance(
     if len(used_crossings) >= 2 and len(peak_amps) >= 2:
         result["is_oscillatory"] = True
 
+        # mediana, nie średnia: ostatni(e) potwierdzony(e) półokres(y) bywa(ją)
+        # tuż nad progiem szumu (amplituda oscylacji zdążyła już mocno
+        # zaniknąć) - jego dokładny czas potwierdzenia jest wtedy niepewny
+        # (pojedyncza próbka szumu decyduje o momencie przekroczenia progu),
+        # co potrafi go skrócić/wydłużyć i wypaczyć ŚREDNIĄ różnicę między
+        # przejściami. Mediana jest odporna na taki pojedynczy zanieczyszczony
+        # półokres bez potrzeby osobnego, ręcznie dobieranego progu odcięcia
+        # (zaobserwowane empirycznie przy porcie do TIMDR-Grid-Monitor, fs=1000Hz:
+        # bez mediany częstotliwość wychodziła zawyżona o ~20%).
         crossing_diffs = np.diff(used_crossings)
-        if len(crossing_diffs) and np.mean(crossing_diffs) > 0:
-            period = 2.0 * float(np.mean(crossing_diffs))  # przejście 2x na okres
+        if len(crossing_diffs) and np.median(crossing_diffs) > 0:
+            period = 2.0 * float(np.median(crossing_diffs))  # przejście 2x na okres
             result["period_s"] = period
             result["frequency_hz"] = 1.0 / period
 
