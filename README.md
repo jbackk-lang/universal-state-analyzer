@@ -113,57 +113,36 @@ Dodatkowe moduły:
   odniesienia z OSOBNEGO okresu kalibracji albo z kohorty, zamiast domyślnie
   z tego samego okna, które jest oceniane. Patrz "Ograniczenia" niżej po to,
   jaki dokładnie problem to rozwiązuje i czego nie rozwiązuje.
+- `timdr_core/trigger.py` — **czujnik sygnałowy** (NIE model, NIE
+  predyktor): `TIMDRTrigger`, dispatcher nad `analyze_multi()` — mówi
+  który typ zdarzenia się odpalił, w którym kanale i gdzie: `RESONANCE`
+  (>=rezonans_min kanałów naraz) > `STRUCTURE` (twist w dowolnym kanale) >
+  `DEFEKT` (nagły skok w dowolnym kanale) > `SCALE` (pojedyncza anomalia)
+  > `NONE`. Sam nie liczy statystyki, tylko woła już przetestowany
+  pipeline. Wpięty do `examples/accelerator/analyze_trajectory.py`. Testy:
+  `tests/test_trigger.py` (66/66 łącznie z resztą).
+
+  ```python
+  from timdr_core import TIMDRTrigger
+
+  trigger = TIMDRTrigger(rezonans_min=3)
+  result = trigger.analyze(t, params)
+  print(result.trigger_type, result.location, result.channel, result.message)
+  ```
 
 Przykład domeny spoza pogody/finansów: `examples/accelerator/` — analiza
 trajektorii z (jawnie uproszczonej, patrz zastrzeżenie niżej) symulacji
 lattice QCD / masy glueballa, tym samym silnikiem.
 
-**Testy: 61, wszystkie przechodzą** (`pytest tests/ -q`) — brzegowe
+**Testy: 59, wszystkie przechodzą** (`pytest tests/ -q`) — brzegowe
 przypadki n=0/1/2, podłoga na zero-inflation (MAD=0/rozrzut=0), gradient
 liczony względem czasu (nie indeksu) na danych z luką, wykrywanie
 wstrzykniętej anomalii/skoku na syntetykach i na nie-mockowanej ścieżce
 integracyjnej z przykładu akceleratora (`test_accelerator_integration.py`),
-`test_baseline.py` (8 testów) opisany w sekcji "Ograniczenia",
+`test_baseline.py` (8 testów) opisany w sekcji "Ograniczenia", oraz
 `test_ringdown.py` (13 testów) — walidacja `ringdown_resonance()` na
 tłumionym oscylatorze o ZNANEJ częstotliwości/tłumieniu, patrz sekcja
-RINGDOWN wyżej — oraz `test_selfbaseline_recovery.py` (2 testy) — patrz
-sekcja "Powrót do normy po anomalii" niżej.
-
-### Powrót do normy po anomalii (`test_selfbaseline_recovery.py`)
-
-Pytanie analogiczne do `test_recovery.py` w siostrzanym repo
-[TIMDR-Crypto-Graph](../TIMDR-Crypto-Graph): gdy anomalia się kończy i
-kolejne odczyty wracają do normy, czy `anomalies()` (self-baseline, bez
-`baseline=`) dalej fałszywie flaguje NOWE, normalne próbki tylko dlatego,
-że stare anomalne próbki wciąż siedzą w oknie referencyjnym?
-
-Mechanizm tu jest inny niż w Crypto-Graph (tam `state` to EMA, powrót jest
-STOPNIOWY — trzeba poczekać, aż filtr "zapomni"). Tu `z` liczy się na nowo
-z median/MAD całego okna przy każdym wywołaniu — więc pytanie sprowadza się
-do jednego: czy median/MAD SĄ zanieczyszczone anomalią, nie "czy pamięć
-zdążyła zaniknąć". Sprawdzone empirycznie (5 ziaren dla przypadku
-mniejszościowego, W=30):
-
-- **Anomalia = mniejszość okna (≤50%, sprawdzone przy 10%):** odzysk jest
-  PRAWIE NATYCHMIASTOWY — już pierwsza normalna próbka po zdarzeniu ma
-  małe `|z|` (<2.5 na wszystkich 5 ziarnach), mimo że okno referencyjne
-  WCIĄŻ zawiera anomalne próbki. Powód: mediana ma punkt załamania 50% —
-  jest odporna na mniejszościowe wartości odstające, więc MAD liczy się
-  praktycznie tak, jakby anomalii w oknie wcale nie było. Nie trzeba
-  czekać, aż anomalia "wypadnie" z okna.
-- **Anomalia zbliżona/przekracza ~73% okna:** median/MAD zaczynają się
-  wyraźnie przesuwać w stronę anomalii — normalne próbki tuż po zdarzeniu
-  wychodzą jako SYSTEMATYCZNIE przesunięte (`|z|`≈2, nie losowy szum koło
-  0), choć wciąż poniżej domyślnego progu flagowania (`factor=3.0`). To
-  częściowa/przejściowa wersja udokumentowanego niżej "ślepego punktu
-  self-baseline" (sygnał nietypowy przez CAŁE okno).
-
-**Wniosek:** dla typowych, krótkotrwałych anomalii (wyraźna mniejszość
-okna) `anomalies()` nie ma problemu ze "sklejaniem się" fałszywych alarmów
-po ustaniu zdarzenia — w przeciwieństwie do mechanizmów opartych na EMA,
-tu nie ma żadnej stopniowej fazy przejściowej do przetestowania. Dla
-długotrwałych anomalii zbliżonych do rozmiaru okna ochrona słabnie
-płynnie, aż do znanego ślepego punktu przy pełnym zanieczyszczeniu okna.
+RINGDOWN wyżej.
 
 ### Użycie
 
@@ -218,7 +197,7 @@ examples/accelerator/
   lattice_demo.py       — mini demo lattice QCD: Wilson loops, U(1) 4D, Metropolis, SU(3) mock (oryginalny skrypt)
   analyze_trajectory.py — podłącza timdr_core do trajektorii z powyższych dwóch skryptów
 tests/
-  test_core.py, test_baseline.py, test_volatility.py, test_bias_correction.py, test_accelerator_integration.py, test_ringdown.py, test_selfbaseline_recovery.py
+  test_core.py, test_baseline.py, test_volatility.py, test_bias_correction.py, test_accelerator_integration.py, test_ringdown.py
 ```
 
 ## Ograniczenia
