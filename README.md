@@ -113,6 +113,22 @@ Dodatkowe moduły:
   odniesienia z OSOBNEGO okresu kalibracji albo z kohorty, zamiast domyślnie
   z tego samego okna, które jest oceniane. Patrz "Ograniczenia" niżej po to,
   jaki dokładnie problem to rozwiązuje i czego nie rozwiązuje.
+- `timdr_core/trigger.py` — **czujnik sygnałowy** (NIE model, NIE
+  predyktor): `TIMDRTrigger`, dispatcher nad `analyze_multi()` — mówi
+  który typ zdarzenia się odpalił, w którym kanale i gdzie: `RESONANCE`
+  (>=rezonans_min kanałów naraz) > `STRUCTURE` (twist w dowolnym kanale) >
+  `DEFEKT` (nagły skok w dowolnym kanale) > `SCALE` (pojedyncza anomalia)
+  > `NONE`. Sam nie liczy statystyki, tylko woła już przetestowany
+  pipeline. Wpięty do `examples/accelerator/analyze_trajectory.py`. Testy:
+  `tests/test_trigger.py` (66/66 łącznie z resztą).
+
+  ```python
+  from timdr_core import TIMDRTrigger
+
+  trigger = TIMDRTrigger(rezonans_min=3)
+  result = trigger.analyze(t, params)
+  print(result.trigger_type, result.location, result.channel, result.message)
+  ```
 
 Przykład domeny spoza pogody/finansów: `examples/accelerator/` — analiza
 trajektorii z (jawnie uproszczonej, patrz zastrzeżenie niżej) symulacji

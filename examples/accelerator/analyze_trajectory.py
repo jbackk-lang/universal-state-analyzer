@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from glueball_mass import compute_correlation
 from lattice_demo import run_wilson_2d, run_su3
-from timdr_core import TIMDRCore
+from timdr_core import TIMDRCore, TIMDRTrigger
 
 
 def build_trajectory(T: int, N: int, mode: str = "basic", su3_N: int | None = None) -> dict[str, np.ndarray]:
@@ -98,6 +98,15 @@ def main() -> None:
         print(f"\nREZONANS (>= {args.rezonans_min} kanałów naraz) w krokach: {list(rez)}")
     else:
         print(f"\nBrak rezonansu (>= {args.rezonans_min} kanałów naraz nigdzie się nie pokrywa).")
+
+    # TIMDRTrigger: czujnik sygnałowy nad tym samym analyze_multi() -
+    # jedno zwięzłe zdanie "co się odpaliło i gdzie", wg priorytetu
+    # RESONANCE > STRUCTURE > DEFEKT > SCALE > NONE (patrz timdr_core/trigger.py).
+    trigger = TIMDRTrigger(rezonans_min=args.rezonans_min)
+    trig = trigger.analyze(t, series)
+    where = f"krok {trig.location}" + (f", kanał '{trig.channel}'" if trig.channel else "")
+    print(f"\nTRIGGER: {trig.trigger_type.value} ({where}) - {trig.message}" if trig.triggered
+          else "\nTRIGGER: brak (NONE) - żaden próg nie przekroczony.")
 
 
 if __name__ == "__main__":

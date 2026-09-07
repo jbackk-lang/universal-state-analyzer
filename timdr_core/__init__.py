@@ -17,6 +17,7 @@ from .volatility import detect_jump, load_last_state, save_last_state, clear_sta
 from .bias_correction import compute_lead_bias, apply_bias_correction, badge
 from .baseline import baseline_from_calibration, cohort_baseline
 from .ringdown import ringdown_resonance
+from .trigger import TIMDRTrigger, SignalTriggerType, SignalTriggerResult
 
 __all__ = [
     "TIMDRCore",
@@ -30,4 +31,7 @@ __all__ = [
     "baseline_from_calibration",
     "cohort_baseline",
     "ringdown_resonance",
+    "TIMDRTrigger",
+    "SignalTriggerType",
+    "SignalTriggerResult",
 ]
