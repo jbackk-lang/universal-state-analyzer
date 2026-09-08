@@ -282,6 +282,57 @@ więcej. Trafność każdego sygnału (czy "anomalia" faktycznie znaczy coś
 ważnego w Twojej domenie) zależy od tego, co podłączysz jako `params`, i
 wymaga własnej weryfikacji względem rzeczywistości.
 
+## Środowisko do testowania nowych hipotez detekcyjnych
+
+`timdr_core/hypothesis_testing.py` daje dostęp do rzetelnego protokołu
+statystycznego (pre-rejestracja hipotezy, Mann-Whitney U, rozmiar efektu
+rank-biserial, kontrola pozytywna/negatywna PRZED testem głównym, korekta
+Bonferroniego za wielokrotne porównania) do sprawdzania, czy nowy
+kandydat na sygnał detekcyjny zbudowany na operatorach tego repo
+(`anomalies()`/`rezonans()`/`ringdown_resonance()`/własna kombinacja)
+faktycznie odróżnia grupę testową od tła, zamiast "na oko wygląda
+sensownie".
+
+To NIE jest nowa implementacja tutaj — moduł sibling-importuje
+`timdr_formalism.pipeline` z repo-siostry `TIMDR-Math-Formalism` (musi
+leżeć obok tego repo w tym samym katalogu nadrzędnym), żeby nie
+duplikować tej matematyki po raz trzeci w ekosystemie (ten sam protokół
+już istniał w `TIMDR-Math-Formalism` do testowania hipotez formalizmu
+matematycznego i, do niedawna, jako osobna, węższa kopia w
+`TIMDR-Earthquake-Core/precursor_validation.py` — ta druga kopia
+została w tej samej sesji zamieniona na sibling-import stąd). Import jest
+bezpieczny nawet bez scipy w środowisku — `mann_whitney_test(...,
+backend="numpy")` ma czysto-numpy fallback (patrz nagłówek
+`timdr_formalism/pipeline.py` w TIMDR-Math-Formalism po historię, dlaczego
+to było konieczne: import scipy na poziomie modułu raz wywalił GUI innego
+repo na Windows Device Guard).
+
+Typowy przepływ:
+
+```python
+from timdr_core.hypothesis_testing import (
+    Hypothesis, Preregistration, run_controls, mann_whitney_test, format_report,
+)
+
+h = Hypothesis(
+    name="moj_nowy_sygnal",
+    description="dokładny opis testowanej metryki/kombinacji operatorów",
+    effect_description="co dokładnie ma być inne między grupą testową a tłem",
+)
+prereg = Preregistration.create(h, params={"window": 100})  # PRZED danymi
+
+controls = run_controls(metric_fn, positive_injector,
+                         negative_generator_a, negative_generator_b)
+if controls.passed:
+    result = mann_whitney_test(test_values, background_values)
+    print(format_report(h, controls, result))
+```
+
+Testy: `tests/test_hypothesis_testing.py` — smoke-test integracji
+(sibling-import + użycie z tego repo), nie duplikuje testowania samej
+matematyki (wyczerpująco pokrytej w
+`TIMDR-Math-Formalism/tests/test_pipeline.py`).
+
 ## Kierunki rozwoju
 
 - **Mad kohorty odporne na małą próbę.** Obecne `cohort_baseline()` liczy
