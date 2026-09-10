@@ -1,10 +1,18 @@
 """Testy timdr_core/hypothesis_testing.py -- sprawdzają TYLKO, że
-sibling-import z TIMDR-Math-Formalism działa i re-eksportowane funkcje są
-wywoływalne z tego repo (smoke test integracji), nie duplikują testowania
-samej matematyki Manna-Whitneya/kontroli/Bonferroniego -- to już jest
-wyczerpująco przetestowane w
-TIMDR-Math-Formalism/tests/test_pipeline.py, jedynym miejscu definicji
-tej logiki (patrz nagłówek hypothesis_testing.py)."""
+re-eksportowane funkcje są wywoływalne z tego repo (smoke test integracji),
+nie duplikują testowania samej matematyki Manna-Whitneya/kontroli/
+Bonferroniego -- to już jest wyczerpująco przetestowane w
+TIMDR-Math-Formalism/tests/test_pipeline.py, oryginalnym miejscu definicji
+tej logiki (patrz nagłówek hypothesis_testing.py).
+
+ZWENDOROWANE 2026-09-10: do 2026-09-10 hypothesis_testing.py ładował
+TIMDR-Math-Formalism przez sys.path sibling-import z folderu-siostry na
+dysku (stąd poniższy test nazywał się kiedyś
+`test_sibling_import_resolves_to_real_pipeline_module`). Teraz używa
+lokalnej, zwendorowanej kopii (`timdr_core/_vendor_timdr_formalism_pipeline.py`)
+-- ten sam kod, inny mechanizm importu (kopia zamiast sibling-importu w
+czasie wykonania), żeby to repo działało samodzielnie po sklonowaniu
+WYŁĄCZNIE siebie."""
 import numpy as np
 import pytest
 
@@ -18,12 +26,11 @@ from timdr_core.hypothesis_testing import (
 )
 
 
-def test_sibling_import_resolves_to_real_pipeline_module():
-    # Upewnia sie, ze to NIE jest lokalna kopia -- modul pochodzi
-    # faktycznie z pakietu timdr_formalism w repo-siostrze
-    # TIMDR-Math-Formalism, zaimportowanego przez sys.path, nie
-    # przepisanego tutaj.
-    assert mann_whitney_test.__module__ == "timdr_formalism.pipeline"
+def test_vendored_import_resolves_to_local_vendored_module():
+    # Upewnia sie, ze re-eksport wskazuje na lokalna, zwendorowana kopie
+    # (timdr_core/_vendor_timdr_formalism_pipeline.py), nie na cos innego -
+    # patrz naglowek tego pliku dla historii tej zmiany (byl sibling-import).
+    assert mann_whitney_test.__module__ == "timdr_core._vendor_timdr_formalism_pipeline"
 
 
 def test_mann_whitney_test_usable_on_timdr_core_style_metric_values():

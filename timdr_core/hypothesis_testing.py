@@ -50,31 +50,14 @@ dopisywania sys.path przez każdego wywołującego.
 """
 from __future__ import annotations
 
-import os
-import sys
-
-
-def _ensure_timdr_math_formalism_on_path() -> None:
-    """Dodaje folder-siostrę TIMDR-Math-Formalism do sys.path -- ten sam
-    wzorzec co `TIMDR-Earthquake-Core/precursor_validation.py`'s
-    `_ensure_timdr_math_formalism_on_path()` i `meta_adapter.py`'s
-    `_ensure_timdr_meta_dynamics_on_path()`. universal-state-analyzer
-    leży bezpośrednio w katalogu nadrzędnym, więc siostra jest o JEDEN
-    poziom wyżej."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    sibling = os.path.abspath(os.path.join(here, "..", "..", "TIMDR-Math-Formalism"))
-    if not os.path.isdir(sibling):
-        raise ImportError(
-            "timdr_core.hypothesis_testing wymaga folderu 'TIMDR-Math-Formalism' "
-            f"jako siostry repo universal-state-analyzer (szukano w: {sibling})."
-        )
-    if sibling not in sys.path:
-        sys.path.insert(0, sibling)
-
-
-_ensure_timdr_math_formalism_on_path()
-
-from timdr_formalism.pipeline import (  # noqa: E402
+# ZWENDOROWANE 2026-09-10 (patrz naglowek timdr_core/_vendor_timdr_formalism_pipeline.py
+# dla pelnego uzasadnienia): ten modul ladowal wczesniej TIMDR-Math-Formalism
+# przez sys.path sibling-import z folderu-siostry na dysku. Zamienione na
+# lokalna, zwendorowana kopie (import relatywny w obrebie tego pakietu),
+# zeby to repo dzialalo samodzielnie po sklonowaniu WYLACZNIE siebie
+# (decyzja na wyrazna prosbe: "repozytoria kodu maja byc niezalezne od
+# siebie"). Zachowanie/matematyka bez zmian.
+from ._vendor_timdr_formalism_pipeline import (
     Hypothesis,
     Preregistration,
     TestResult,
